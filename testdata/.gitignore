@@ -1,0 +1,6 @@
+# Ignore everything in testdata by default
+*
+
+# Whitelist only the .c source files
+!*.c
+!.gitignore

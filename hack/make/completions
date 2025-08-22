@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Get the project root (assuming this script is in hack/make/)
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Set up completions directory in project root
+COMPLETIONS_DIR="$PROJECT_ROOT/completions"
+
+rm -rf "$COMPLETIONS_DIR"
+mkdir -p "$COMPLETIONS_DIR"
+
+# Change to the cmd/hv directory relative to project root
+cd "$PROJECT_ROOT/cmd/hv"
+
+for sh in bash zsh fish powershell; do
+    go run main.go completion "$sh" >"$COMPLETIONS_DIR/_$sh"
+done

@@ -1,0 +1,25 @@
+#!/bin/bash
+set -euo pipefail
+
+echo "🧪 Running integration tests for go-hypervisor"
+
+# Resolve repo root from this script location
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+
+TEST_BIN="$ROOT_DIR/hypervisor_test"
+ENTITLEMENTS_FILE="$ROOT_DIR/hypervisor.entitlements"
+
+echo "Building test binary..."
+go test -c -tags=hypervisor . -o "$TEST_BIN"
+
+echo "Signing test binary with hypervisor entitlements..."
+codesign --sign - --force --entitlements="$ENTITLEMENTS_FILE" "$TEST_BIN"
+
+echo "Running integration tests..."
+"$TEST_BIN" -test.v -test.run "TestDemoIntegration|TestVMLifecycle|TestRegisterRoundTrip"
+
+echo "Cleaning up..."
+rm -f "$TEST_BIN"
+
+echo "✅ Integration tests completed"
