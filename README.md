@@ -191,6 +191,10 @@ Or download from the latest [release](https://github.com/blacktop/go-hypervisor/
 ```bash
 hv check
 ```
+```bash
+hv support: true
+entitlements: hypervisor=true
+```
 
 #### Execute Raw Machine Code
 
@@ -212,6 +216,19 @@ Example initial state file (`initial.json`):
   "x1": 200,
   "sp": 32768
 }
+```
+
+#### Using with jq for JSON Processing
+
+```bash
+# Extract specific register values
+hv execute code.bin | jq '.state.x0'
+
+# Get exit information
+hv execute code.bin | jq '.exit_info'
+
+# Check if execution succeeded
+hv execute code.bin | jq -r 'if .error then "FAILED: " + .error else "SUCCESS" end'
 ```
 
 #### Emulate Mach-O Functions
@@ -248,17 +265,46 @@ Stack change: 0 bytes
 ISP> 0000000000008000:  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  |................|
 ```
 
-#### Using with jq for JSON Processing
+Dump Emulation results as JSON
 
 ```bash
-# Extract specific register values
-hv execute code.bin | jq '.state.x0'
+# Extract function information from emulation
+hv emu testdata/stack_string -n _build_stack_string --json  | jq '.function'
+```
+```json
+{
+  "name": "_build_stack_string",
+  "start_addr": 4294968296,
+  "end_addr": 4294968380,
+  "size": 84
+}
+```
 
-# Get exit information
-hv execute code.bin | jq '.exit_info'
+```bash
+# Get final register state from emulation
+hv emu testdata/stack_string -n _build_stack_string --json | jq '.state.x0' | read num; printf "%x\n" $num
+```
+```bash
+7ff0
+```
 
-# Check if execution succeeded
-hv execute code.bin | jq -r 'if .error then "FAILED: " + .error else "SUCCESS" end'
+```bash
+# Dump the stack memory after emulation
+hv emu testdata/stack_string -n _build_stack_string --json | jq -r '.memory."0x4000"' | base64 -D | hexdump -C
+```
+```
+00000000  ff 43 00 d1 e0 03 00 91  08 09 80 52 e8 03 00 39  |.C.........R...9|
+00000010  a9 0c 80 52 e9 07 00 39  89 0d 80 52 e9 0b 00 39  |...R...9...R...9|
+00000020  e9 0f 00 39 e9 0d 80 52  e9 13 00 39 09 04 80 52  |...9...R...9...R|
+00000030  e9 17 00 39 e8 1b 00 39  c8 0a 80 52 e8 1f 00 39  |...9...9...R...9|
+00000040  28 04 80 52 e8 23 00 39  ff 27 00 39 ff 43 00 91  |(..R.#.9.'.9.C..|
+00000050  c0 03 5f d6 00 00 20 d4  00 00 00 00 00 00 00 00  |.._... .........|
+00000060  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  |................|
+*
+00003ff0  48 65 6c 6c 6f 20 48 56  21 00 00 00 00 00 00 00  |Hello HV!.......| 😎
+00004000  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  |................|
+*
+00010000
 ```
 
 ## License

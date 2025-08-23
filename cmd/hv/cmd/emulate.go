@@ -22,6 +22,7 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/blacktop/go-hypervisor"
@@ -31,11 +32,28 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// EmulateResult represents the emulation result with function metadata
+type EmulateResult struct {
+	Function struct {
+		Name      string `json:"name"`
+		StartAddr uint64 `json:"start_addr"`
+		EndAddr   uint64 `json:"end_addr"`
+		Size      uint64 `json:"size"`
+	} `json:"function"`
+	InitialSP uint64              `json:"initial_sp"`
+	State     CPUState            `json:"state"`
+	ExitInfo  hypervisor.ExitInfo `json:"exit_info"`
+	Memory    map[string][]byte   `json:"memory,omitempty"`
+	Error     string              `json:"error,omitempty"`
+}
+
 func init() {
 	rootCmd.AddCommand(emulateCmd)
 	emulateCmd.Flags().Uint64P("addr", "a", 0, "Address to emulate (0 = use entry point)")
+	emulateCmd.Flags().StringP("sym", "n", "", "Symbol name to emulate")
 	emulateCmd.Flags().IntP("mem-size", "m", 0x10000, "Memory size to allocate (bytes)")
 	emulateCmd.Flags().Uint64P("stack", "s", 0x8000, "Stack pointer address (within allocated memory)")
+	emulateCmd.Flags().Bool("json", false, "Output results as JSON")
 }
 
 var emulateCmd = &cobra.Command{
@@ -53,12 +71,17 @@ var emulateCmd = &cobra.Command{
 		// Get flags
 		addr, err := cmd.Flags().GetUint64("addr")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get address flag: %w", err)
+		}
+
+		sym, err := cmd.Flags().GetString("sym")
+		if err != nil {
+			return fmt.Errorf("failed to get symbol name flag: %w", err)
 		}
 
 		memSize, err := cmd.Flags().GetInt("mem-size")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get memory size flag: %w", err)
 		}
 
 		// Validate memory size is page-aligned
@@ -69,7 +92,12 @@ var emulateCmd = &cobra.Command{
 
 		stackPtr, err := cmd.Flags().GetUint64("stack")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get stack pointer flag: %w", err)
+		}
+
+		jsonOutput, err := cmd.Flags().GetBool("json")
+		if err != nil {
+			return fmt.Errorf("failed to get json flag: %w", err)
 		}
 
 		// Validate stack pointer is within memory range
@@ -87,15 +115,19 @@ var emulateCmd = &cobra.Command{
 		defer m.Close()
 
 		// Determine address to emulate
-		if addr == 0 {
+		if addr == 0 && len(sym) == 0 {
 			if main := m.GetLoadsByName("LC_MAIN"); len(main) == 0 {
 				return fmt.Errorf("failed to find LC_MAIN in target - use --addr to specify function address")
 			} else {
 				addr = main[0].(*macho.EntryPoint).EntryOffset + m.GetBaseAddress()
 			}
+		} else if addr == 0 && len(sym) > 0 {
+			symAddr, err := m.FindSymbolAddress(sym)
+			if err != nil {
+				return fmt.Errorf("failed to find symbol %q: %w", sym, err)
+			}
+			addr = symAddr
 		}
-
-		fmt.Printf("Emulating function at address: 0x%x\n", addr)
 
 		// Get function boundaries
 		fn, err := m.GetFunctionForVMAddr(addr)
@@ -103,8 +135,15 @@ var emulateCmd = &cobra.Command{
 			return fmt.Errorf("failed to find function at address 0x%x: %w", addr, err)
 		}
 
-		fmt.Printf("Function: %s (0x%x - 0x%x, %d bytes)\n",
-			fn.Name, fn.StartAddr, fn.EndAddr, fn.EndAddr-fn.StartAddr)
+		if len(sym) > 0 && len(fn.Name) == 0 {
+			fn.Name = sym
+		}
+
+		if !jsonOutput {
+			fmt.Printf("Emulating function at address: 0x%x\n", addr)
+			fmt.Printf("Function: %s (0x%x - 0x%x, %d bytes)\n",
+				fn.Name, fn.StartAddr, fn.EndAddr, fn.EndAddr-fn.StartAddr)
+		}
 
 		// Extract function bytes
 		instrs := make([]byte, fn.EndAddr-fn.StartAddr)
@@ -116,25 +155,52 @@ var emulateCmd = &cobra.Command{
 		instrs = append(instrs, 0x00, 0x00, 0x20, 0xd4) // brk #0
 
 		// Execute the function
-		result, err := emulateFunction(instrs, stackPtr, memSize)
+		execResult, err := emulateFunction(instrs, stackPtr, memSize)
+
+		// Create emulation result
+		emulateResult := &EmulateResult{
+			InitialSP: stackPtr,
+		}
+		emulateResult.Function.Name = fn.Name
+		emulateResult.Function.StartAddr = fn.StartAddr
+		emulateResult.Function.EndAddr = fn.EndAddr
+		emulateResult.Function.Size = fn.EndAddr - fn.StartAddr
+
 		if err != nil {
-			return fmt.Errorf("emulation failed: %w", err)
+			emulateResult.Error = err.Error()
+		} else {
+			emulateResult.State = execResult.State
+			emulateResult.ExitInfo = execResult.ExitInfo
+			emulateResult.Memory = execResult.Memory
 		}
 
-		// Print results
-		fmt.Printf("\n=== Execution Results ===\n")
-		fmt.Printf("Exit Reason: %v\n", result.ExitInfo.Reason)
-		fmt.Printf("Final SP: 0x%x (moved %d bytes)\n",
-			result.State.SP, int64(result.State.SP)-int64(stackPtr))
+		if jsonOutput {
+			// Output JSON result
+			output, err := json.Marshal(emulateResult)
+			if err != nil {
+				return fmt.Errorf("failed to marshal result: %w", err)
+			}
+			fmt.Println(string(output))
+		} else {
+			if err != nil {
+				return fmt.Errorf("emulation failed: %w", err)
+			}
 
-		fmt.Printf("\nRegisters:\n")
-		fmt.Printf("  X0=0x%x  X1=0x%x  X2=0x%x  X3=0x%x\n",
-			result.State.X0, result.State.X1, result.State.X2, result.State.X3)
-		fmt.Printf("  PC=0x%x  SP=0x%x  FP=0x%x  LR=0x%x\n",
-			result.State.PC, result.State.SP, result.State.FP, result.State.LR)
+			// Print results
+			fmt.Printf("\n=== Execution Results ===\n")
+			fmt.Printf("Exit Reason: %v\n", execResult.ExitInfo.Reason)
+			fmt.Printf("Final SP: 0x%x (moved %d bytes)\n",
+				execResult.State.SP, int64(execResult.State.SP)-int64(stackPtr))
 
-		// Print stack contents
-		printStackContents(result.Memory, baseAddr, stackPtr, result.State.SP)
+			fmt.Printf("\nRegisters:\n")
+			fmt.Printf("  X0=0x%x  X1=0x%x  X2=0x%x  X3=0x%x\n",
+				execResult.State.X0, execResult.State.X1, execResult.State.X2, execResult.State.X3)
+			fmt.Printf("  PC=0x%x  SP=0x%x  FP=0x%x  LR=0x%x\n",
+				execResult.State.PC, execResult.State.SP, execResult.State.FP, execResult.State.LR)
+
+			// Print stack contents
+			printStackContents(execResult.Memory, baseAddr, stackPtr, execResult.State.SP)
+		}
 
 		return nil
 	},
