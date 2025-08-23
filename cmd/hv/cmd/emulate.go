@@ -39,9 +39,10 @@ func init() {
 }
 
 var emulateCmd = &cobra.Command{
-	Use:   "emulate [FILE]",
-	Short: "Emulate a function from a Mach-O binary and show stack contents",
-	Args:  cobra.ExactArgs(1),
+	Use:     "emulate [FILE]",
+	Aliases: []string{"emu"},
+	Short:   "Emulate a function from a Mach-O binary and show stack contents",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Check hypervisor support
 		ok, err := hypervisor.Supported()

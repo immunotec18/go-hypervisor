@@ -95,8 +95,9 @@ func init() {
 }
 
 var executeCmd = &cobra.Command{
-	Use:   "execute [code-file]",
-	Short: "Execute ARM64 code and return CPU state as JSON",
+	Use:     "execute [FILE]",
+	Aliases: []string{"exec"},
+	Short:   "Execute ARM64 code and return CPU state as JSON",
 	Long: `Execute ARM64 machine code and return the resulting CPU state as JSON.
 	
 Code can be provided as:
