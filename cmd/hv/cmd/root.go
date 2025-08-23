@@ -29,8 +29,6 @@ import (
 
 func init() {
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.hv.yaml)")
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
 }
 
