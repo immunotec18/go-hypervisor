@@ -29,6 +29,7 @@ dist/
 .DS_Store
 completions/
 /hv
+cmd/hv/hv
 
 # AI
 .claude
