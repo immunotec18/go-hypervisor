@@ -52,7 +52,7 @@ func main() {
         log.Fatal("Hypervisor not supported on this system")
     }
 
-    // Create a new VM (only one VM per process allowed)
+    // Create a new VM (this implementation allows only one VM per process)
     vm, err := hypervisor.NewVM()
     if err != nil {
         log.Fatal("Failed to create VM:", err)
