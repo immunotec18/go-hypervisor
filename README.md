@@ -173,7 +173,7 @@ codesign --sign - --force --entitlements=hypervisor.entitlements ./your-app
 Install with Homebrew:
 
 ```bash
-brew install blacktop/tap/hv
+brew install blacktop/tap/go-hypervisor
 ```
 
 Install with Go:

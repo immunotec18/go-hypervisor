@@ -67,7 +67,7 @@ brews:
     directory: Formula
     goarm: "7"
     homepage: https://github.com/blacktop/hv
-    description: hv
+    description: Apple Hypervisor.framework Util
     license: MIT
     install: |
       bin.install "hv"
